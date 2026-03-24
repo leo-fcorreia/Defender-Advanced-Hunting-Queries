@@ -1,0 +1,7 @@
+// Audit: Detection of Event Log Clearing
+DeviceProcessEvents
+| where Timestamp > ago(30d)
+| where FileName =~ "wevtutil.exe"
+| where ProcessCommandLine has_any ("cl ", "clear-log")
+| project Timestamp, DeviceName, InitiatingProcessAccountName, ProcessCommandLine
+| extend Status = "CRITICAL: Audit Log Cleared"
