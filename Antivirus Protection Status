@@ -1,0 +1,26 @@
+AlertInfo
+| where Timestamp > ago(30d)
+| where Category == 'Malware'
+| join kind=inner (
+    AlertEvidence
+    | where FolderPath !contains 'Commvault'
+    | summarize 
+        SHA256 = take_anyif(SHA256, isnotempty(SHA256)), 
+        DeviceName = take_anyif(DeviceName, isnotempty(DeviceName))
+        by AlertId
+) on AlertId
+| summarize 
+    Detections = countif(Title has 'detected'),
+    Preventions = countif(Title has 'prevented'),
+    MaxSeverity = max(Severity),
+    AlertTitles_Raw = make_set(Title) 
+    by DeviceName, SHA256
+| extend AlertTitles = tostring(AlertTitles_Raw)
+// Extrai o texto entre aspas simples (o nome do Malware)
+| extend MalwareName = extract('\\x27(.*?)\\x27', 1, AlertTitles)
+| extend ProtectionStatus = case(
+    Detections > 0 and Preventions == 0, 'Infected', 
+    Detections > 0 and Preventions > 0, 'Remediated',
+    'Protected'
+)
+| project-away AlertTitles_Raw
