@@ -1,0 +1,9 @@
+AlertInfo
+// Define timerange
+| where Timestamp > ago(30d)
+| where AttackTechniques != ""
+| mvexpand todynamic(AttackTechniques)
+| summarize count() by tostring(AttackTechniques)
+// Define graphic
+| top 10 by count_
+| render piechart 
