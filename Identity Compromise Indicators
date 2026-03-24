@@ -1,0 +1,41 @@
+// 1. Filter for failed sign-ins
+AADSignInEventsBeta
+| where Timestamp > ago(30d)
+| where ErrorCode != 0
+| where ErrorCode in (50126, 50053, 50158)
+| where LogonType !contains 'nonInteractiveUser'
+| where IsManaged == 0
+| where IsCompliant == 0
+// Exclude Trusted Public IP Ranges
+//| where IPAddress !contains 'xxx.xxx.xxx.' or IPAddress !contains 'xxx.xxx.xxx.' or IPAddress !contains '1xxx.xxx.xxx.' or IPAddress !contains 'xxx.xxx.xxx.'
+| where not(ipv4_is_in_range(IPAddress, 'xxx.xxx.xxx.xxx/xx'))
+| where NetworkLocationDetails !contains 'trustedNamedLocation'
+// 2. Map codes to readable reasons
+| extend FailureReason = case(
+    ErrorCode == 50126, 'Invalid Credentials',
+    ErrorCode == 50053, 'Account Locked',
+    ErrorCode == 50158, 'MFA Challenge Failed',
+    strcat('Error: ', tostring(ErrorCode))
+)
+// 3. Summarize by user (creating sets)
+| summarize 
+    FailureCount = count(),
+    ReasonSet = make_set(FailureReason),
+    CountrySet = make_set(Country),
+    IPSet = make_set(IPAddress),
+    RiskSet = make_set(RiskLevelDuringSignIn),
+    AppSet = make_set(Application)
+    by AccountUpn
+// 4. ADD NEW COLUMN: Count number of unique IPs
+| extend DistinctIPCount = array_length(IPSet)
+// 5. REMOVE ARRAY FORMATTING (Converting to clean strings)
+| extend 
+    FailureReason = strcat_array(ReasonSet, ' | '),
+    Country = strcat_array(CountrySet, ', '),
+    IPAddress = strcat_array(IPSet, ', '),
+    RiskLevel = strcat_array(RiskSet, ', '),
+    Application = strcat_array(AppSet, ', ')
+// 6. Final presentation
+| top 15 by FailureCount
+| project AccountUpn, FailureCount, FailureReason, RiskLevel, Application, Country, DistinctIPCount, IPAddress
+| sort by FailureCount desc
