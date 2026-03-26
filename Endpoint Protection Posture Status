@@ -1,5 +1,11 @@
+// DEFINE LOOKBACK PERIOD
+let lookback = 30d;
+// DEFINE TOTAL NUMBER OF REQUIRED CONTROLS
+let TotalControls = 10;
 // 1) BASELINE TABLE
-let basetable = DeviceTvmSecureConfigurationAssessment
+let basetable =
+    DeviceTvmSecureConfigurationAssessment
+    | where Timestamp > ago(lookback)
     | where ConfigurationId in (
         'scid-91','scid-2000','scid-2001','scid-2002','scid-2003',
         'scid-2010','scid-2011','scid-2012','scid-2014','scid-2016'
@@ -17,12 +23,18 @@ let basetable = DeviceTvmSecureConfigurationAssessment
         ConfigurationId == "scid-2016", "CloudProtection",
         "N/A"
     ),
-    Result = case(IsApplicable == 0, "N/A", IsCompliant == 1, "GOOD", "BAD")
+    Result = case(
+        IsApplicable == 0, "N/A",
+        IsCompliant == 1, "GOOD",
+        "BAD"
+    )
     | extend packed = pack(Test, Result)
     | summarize Tests = make_bag(packed), DeviceName = any(DeviceName) by DeviceId
     | evaluate bag_unpack(Tests);
-// 2) AV Mode
-let avmodetable = DeviceTvmSecureConfigurationAssessment
+// 2) AV MODE
+let avmodetable =
+    DeviceTvmSecureConfigurationAssessment
+    | where Timestamp > ago(lookback)
     | where ConfigurationId == "scid-2010" and isnotnull(Context)
     | extend avdata = parsejson(Context)
     | extend AVMode = case(
@@ -32,7 +44,9 @@ let avmodetable = DeviceTvmSecureConfigurationAssessment
         "Unknown")
     | project DeviceId, AVMode;
 // 3) AV VERSION + OS PLATFORM
-let avsigtable = DeviceTvmSecureConfigurationAssessment
+let avsigtable =
+    DeviceTvmSecureConfigurationAssessment
+    | where Timestamp > ago(lookback)
     | where ConfigurationId == "scid-2011" and isnotnull(Context)
     | extend avdata = parsejson(Context)
     | extend AVSigVersion = tostring(avdata[0][0])
@@ -41,39 +55,42 @@ let avsigtable = DeviceTvmSecureConfigurationAssessment
     | extend AVProductVersion = tostring(avdata[0][3])
     | project DeviceId, OSPlatform,
               AVSigVersion, AVEngineVersion, AVSigLastUpdateTime, AVProductVersion;
-// 4) MERGE ALL TABLES
-let merged = basetable
+// 4) MERGE TABLES
+let merged =
+    basetable
     | join kind=leftouter avsigtable on DeviceId
     | join kind=leftouter avmodetable on DeviceId
+    | where OSPlatform !in ("iOS", "macOS")
     | project-away DeviceId1, DeviceId2;
-// 5) COMPLIANCE
-let compliance = merged
+// 5) COMPLIANCE CALCULATION
+let compliance =
+    merged
+    // Replace empty or null fields with "N/A"
     | extend ComplianceArray = pack_array(
-        pack_array("SensorEnabled", SensorEnabled),
-        pack_array("SensorDataCollection", SensorDataCollection),
-        pack_array("ImpairedCommunications", ImpairedCommunications),
-        pack_array("TamperProtection", TamperProtection),
-        pack_array("AntivirusEnabled", AntivirusEnabled),
-        pack_array("AntivirusSignatureVersion", AntivirusSignatureVersion),
-        pack_array("RealtimeProtection", RealtimeProtection),
-        pack_array("BehaviorMonitoring", BehaviorMonitoring),
-        pack_array("AntivirusReporting", AntivirusReporting),
-        pack_array("CloudProtection", CloudProtection)
+        pack_array("SensorEnabled", iff(isnull(SensorEnabled) or SensorEnabled=="", "N/A", SensorEnabled)),
+        pack_array("SensorDataCollection", iff(isnull(SensorDataCollection) or SensorDataCollection=="", "N/A", SensorDataCollection)),
+        pack_array("ImpairedCommunications", iff(isnull(ImpairedCommunications) or ImpairedCommunications=="", "N/A", ImpairedCommunications)),
+        pack_array("TamperProtection", iff(isnull(TamperProtection) or TamperProtection=="", "N/A", TamperProtection)),
+        pack_array("AntivirusEnabled", iff(isnull(AntivirusEnabled) or AntivirusEnabled=="", "N/A", AntivirusEnabled)),
+        pack_array("AntivirusSignatureVersion", iff(isnull(AntivirusSignatureVersion) or AntivirusSignatureVersion=="", "N/A", AntivirusSignatureVersion)),
+        pack_array("RealtimeProtection", iff(isnull(RealtimeProtection) or RealtimeProtection=="", "N/A", RealtimeProtection)),
+        pack_array("BehaviorMonitoring", iff(isnull(BehaviorMonitoring) or BehaviorMonitoring=="", "N/A", BehaviorMonitoring)),
+        pack_array("AntivirusReporting", iff(isnull(AntivirusReporting) or AntivirusReporting=="", "N/A", AntivirusReporting)),
+        pack_array("CloudProtection", iff(isnull(CloudProtection) or CloudProtection=="", "N/A", CloudProtection))
     )
     | mv-expand ComplianceArray
     | extend TestName = tostring(ComplianceArray[0]),
              TestResult = tostring(ComplianceArray[1])
-    | summarize 
-        BadCount = countif(TestResult == "BAD"),
+    | summarize
         GoodCount = countif(TestResult == "GOOD"),
-        ApplicableCount = countif(TestResult != "N/A")
+        BadCount = countif(TestResult == "BAD"),
+        NAcount = countif(TestResult == "N/A")
       by DeviceId
     | extend OverallCompliance = case(
-        ApplicableCount == 0, "N/A",
-        BadCount == 0, "YES",
+        GoodCount == TotalControls, "YES",   // ✔ only full 10/10 GOOD
         "NO"
     );
-// 6) FINAL TABLE
+// FINAL OUTPUT
 merged
 | join kind=leftouter compliance on DeviceId
 | project-away DeviceId1
