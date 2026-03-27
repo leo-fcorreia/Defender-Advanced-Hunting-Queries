@@ -43,7 +43,9 @@ let avsigtable = DeviceTvmSecureConfigurationAssessment
             AVEngineVersion = tostring(avdata[0][1]),
             AVSigLastUpdateTime = tostring(avdata[0][2]),
             AVProductVersion = tostring(avdata[0][3])
-| project DeviceId, OSPlatform, AVSigVersion, AVEngineVersion, AVSigLastUpdateTime, AVProductVersion;
+| extend IsMDEVersionCompliant = iff(IsCompliant == '1', 'YES', 'NO')
+| extend IsMDEApplicable = iff(IsApplicable == '1', 'YES', 'NO')
+| project DeviceId, OSPlatform, AVSigVersion, AVEngineVersion, AVSigLastUpdateTime, AVProductVersion, IsMDEVersionCompliant, IsMDEApplicable;
 let merged = basetable
 | join kind=leftouter avsigtable on DeviceId
 | join kind=leftouter avmodetable on DeviceId
