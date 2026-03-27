@@ -1,0 +1,17 @@
+    // 1. Top 10 Dispositivos mais afetados
+    let TopDevices = AlertEvidence
+    | where Timestamp > ago(30d)
+    | where isnotempty(DeviceName)
+    | summarize AlertCount = dcount(AlertId) by Name = DeviceName
+    | extend Type = 'Device'
+    | top 10 by AlertCount;
+    // 2. Top 10 Usuários (Contas) mais afetados
+    let TopAccounts = AlertEvidence
+    | where Timestamp > ago(30d)
+    | where isnotempty(AccountName)
+    | summarize AlertCount = dcount(AlertId) by Name = AccountName
+    | extend Type = 'Account'
+    | top 10 by AlertCount;
+    // 3. Unir os resultados
+    union TopDevices, TopAccounts
+    | sort by AlertCount desc
