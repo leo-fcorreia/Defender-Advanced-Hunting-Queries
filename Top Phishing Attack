@@ -1,0 +1,21 @@
+// 1. Filtramos alertas de Phishing e expandimos o JSON das técnicas
+let PhishAlerts = AlertInfo
+| where Timestamp > ago(30d)
+| where AttackTechniques contains 'phish'
+| extend TechJSON = parse_json(AttackTechniques)
+| mv-expand TechJSON
+| project AlertId, Technique = tostring(TechJSON);
+// 2. Cruzamos com as evidências de contas
+AlertEvidence
+| where Timestamp > ago(30d)
+| where isnotempty(AccountName)
+| join kind=inner PhishAlerts on AlertId
+// 3. Agrupamos para contar alertas e consolidar as técnicas em um array limpo
+| summarize 
+    AlertCount = dcount(AlertId), 
+    TechSet = make_set(Technique) 
+  by AccountName
+// 4. Pegamos o Top 10 e limpamos a string final
+| top 10 by AlertCount
+| extend TechniquesList = strcat_array(TechSet, ', ')
+| project AccountName, AlertCount, TechniquesList
