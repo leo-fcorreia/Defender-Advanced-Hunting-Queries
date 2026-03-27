@@ -1,5 +1,6 @@
+let lookback = 30d;
 let basetable = DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(30d)
+| where Timestamp > ago(lookback)
 | where ConfigurationId in (
     'scid-91','scid-2000','scid-2001','scid-2002','scid-2003',
     'scid-2010','scid-2011','scid-2012','scid-2014','scid-2016'
@@ -26,7 +27,7 @@ Result = case(
 | summarize Tests = make_bag(packed), DeviceName = any(DeviceName) by DeviceId
 | evaluate bag_unpack(Tests);
 let avmodetable = DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(30d)
+| where Timestamp > ago(lookback)
 | where ConfigurationId == 'scid-2010' and isnotnull(Context)
 | extend avdata = parse_json(Context)
 | extend AVMode = case(
@@ -36,7 +37,7 @@ let avmodetable = DeviceTvmSecureConfigurationAssessment
     'Unknown')
 | project DeviceId, AVMode;
 let avsigtable = DeviceTvmSecureConfigurationAssessment
-| where Timestamp > ago(30d)
+| where Timestamp > ago(lookback)
 | where ConfigurationId == 'scid-2011' and isnotnull(Context)
 | extend avdata = parse_json(Context)
 | extend AVSigVersion = tostring(avdata[0][0]),
