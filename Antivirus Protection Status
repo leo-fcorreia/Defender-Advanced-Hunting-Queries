@@ -15,6 +15,8 @@ AlertInfo
 | extend IsDetection = Title contains "detected"
 | extend IsPrevention = Title contains "prevented"
 | summarize
+    AlertIds = make_set(AlertId, 50),
+    TotalAlerts = dcount(AlertId),
     Detections = countif(IsDetection),
     Preventions = countif(IsPrevention),
     FirstDetectionSeen = minif(Timestamp, IsDetection),
@@ -23,7 +25,7 @@ AlertInfo
     LastPreventionSeen = maxif(Timestamp, IsPrevention),
     MaxSeverity = max(Severity),
     AlertTitles_Raw = make_set(Title, 50)
-by AlertId, DeviceName, SHA256, SHA1, FileName, FolderPath
+by DeviceName, SHA256, SHA1, FileName, FolderPath
 | extend AlertTitles = tostring(AlertTitles_Raw)
 | extend MalwareName = extract('\\x27(.*?)\\x27', 1, AlertTitles)
 | extend FirstSeen = case(
@@ -44,13 +46,14 @@ by AlertId, DeviceName, SHA256, SHA1, FileName, FolderPath
     "Other"
 )
 | project
-    AlertId,
     DeviceName,
     FileName,
     FolderPath,
     SHA1,
     SHA256,
     MalwareName,
+    TotalAlerts,
+    AlertIds,
     Detections,
     Preventions,
     FirstSeen,
